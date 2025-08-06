@@ -1,0 +1,994 @@
+---
+title: "Understanding Global Climate Change"
+author: "Zainab Hanjra"
+date: "`r Sys.Date()`"
+output: html_document
+runtime: shiny
+resource_files:
+- processed_combined_data.rds
+- summary_table.rds
+---
+  
+```{r setup, include=FALSE,echo=FALSE,warning=FALSE}
+# Global setup for Shiny and deployment
+library(shiny)
+library(rsconnect)
+
+library(ggplot2)
+library(ggrepel)     # for geom_text_repel()
+library(scales)      # for scale formatting
+library(viridis)     # for color scales
+library(plotly)      # for interactive plots
+library(tidyr)
+library(dplyr)
+# Mapping
+library(leaflet)
+
+library(countrycode)
+
+# rsconnect deployment credentials (set once per machine or via env vars)
+rsconnect::setAccountInfo(name='hanjrazainab',
+			  token='DE68490CB69E28FCBAC0692EF072217E',
+			  secret='vYmtBkJYid1xj1r0knoeT01cvkZ8uoi8fmkyZmZQ')
+
+# Knitr options
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+### Introduction
+Global climate change is a pressing environmental challenge driven by human activities, primarily the burning of fossil fuels, deforestation, and industrial emissions. These activities increase greenhouse gas concentrations, trapping heat in the Earth's atmosphere and leading to rising temperatures, extreme weather events, and disruptions to ecosystems. The consequences include melting polar ice caps, rising sea levels, biodiversity loss, and threats to food and water security. Addressing climate change requires global cooperation, transitioning to renewable energy sources, promoting sustainable practices, and implementing policies that reduce carbon footprints. Immediate action is crucial to mitigate its long-term impact on both the planet and future generations.
+
+```{r data-prep,,echo=FALSE,warning=FALSE}
+combined_data <- readRDS("processed_combined_data.rds")
+summary_table <- readRDS("summary_table.rds")
+
+
+excluded_countries <- c(
+  "Early-demographic dividend", "Africa Eastern and Southern", "Arab World",
+  "East Asia & Pacific", "East Asia & Pacific (excluding high income)",
+  "East Asia & Pacific (IDA & IBRD countries)", "Euro area", "Europe & Central Asia",
+  "Europe & Central Asia (excluding high income)", "Europe & Central Asia (IDA & IBRD countries)",
+  "European Union", "Fragile and conflict affected situations", "Heavily indebted poor countries (HIPC)",
+  "High income", "IBRD only", "IDA & IBRD total", "IDA blend", "IDA only", "IDA total",
+  "Late-demographic dividend", "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)",
+  "Latin America & the Caribbean (IDA & IBRD countries)", "Least developed countries: UN classification",
+  "Low & middle income", "Low income", "Lower middle income", "Middle East & North Africa",
+  "Middle East & North Africa (excluding high income)", "Middle East & North Africa (IDA & IBRD countries)",
+  "Middle income", "Not classified", "OECD members", "Other small states", "Pacific island small states",
+  "Post-demographic dividend", "Pre-demographic dividend", "South Asia", "South Asia (IDA & IBRD)",
+  "Sub-Saharan Africa", "Sub-Saharan Africa (excluding high income)",
+  "Sub-Saharan Africa (IDA & IBRD countries)", "Upper middle income", "World", "(blank)"
+)
+
+```
+
+
+### Global Temperature Trends
+
+Over the past 20 years, global temperatures have risen significantly. Since the early 2000s, Earth's average surface temperature has increased by approximately *0.8°C. According to data on global temperature anomalies by NASA, **2023 was one of the hottest years ever recorded*, continuing a trend of increasing temperatures.
+
+```{r controls}
+# Example control to filter year range
+sliderInput("year_range", "Select Year Range:",
+            min = min(combined_data$year),
+            max = max(combined_data$year),
+            value = c(min(combined_data$year), max(combined_data$year)),
+            sep = "")
+```
+
+
+```{r global-temp, echo=FALSE}
+output$temp_plot <- renderPlotly({
+  filtered <- combined_data %>%
+    filter(year >= input$year_range[1], year <= input$year_range[2])
+
+  p <- ggplot(filtered, aes(x = year, y = no_smoothing)) +
+    geom_line(linewidth = 1, color = "red") +
+    labs(title = "Global Temperature Change Over Time",
+         x = "Year", y = "Temperature Change (°C)") +
+    theme_minimal()
+
+  ggplotly(p)
+})
+
+plotlyOutput("temp_plot")
+```
+
+### Temperature Change vs Water Stress
+
+Global temperature rise and water stress share a direct correlation driven by increasing temperatures, changing precipitation patterns, and heightened evaporation rates.
+
+```{r djvh}
+sliderInput("stress_year_range", "Select Year Range:",
+    min = 2001,
+    max = max(combined_data$year, na.rm = TRUE),
+    value = c(2001, max(combined_data$year, na.rm = TRUE)),
+    step = 1,
+    sep = "")
+
+```
+
+```{r temp-vs-water-stress, echo=FALSE}
+output$stress_plot <- renderPlotly({
+  # Filter data based on selected year range
+  filtered_data <- combined_data %>%
+    filter(year <= input$stress_year_range[1],
+           year <= input$stress_year_range[2])
+
+  # Normalize within the selected year range
+  filtered_data$lowess_5 <- (filtered_data$lowess_5 - min(filtered_data$lowess_5)) /
+    (max(filtered_data$lowess_5) - min(filtered_data$lowess_5))
+
+  filtered_data$level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources <-
+    (filtered_data$level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources -
+       min(filtered_data$level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources)) /
+    (max(filtered_data$level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources) -
+       min(filtered_data$level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources))
+
+  # Plot
+  p <- ggplot(filtered_data) +
+    geom_line(aes(x = year,
+                  y = level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources,
+                  color = "Water Stress"), linewidth = 1) +
+    geom_line(aes(x = year,
+                  y = lowess_5,
+                  color = "Temperature Change"), linewidth = 1, linetype = "dashed") +
+    scale_color_manual(values = c("Water Stress" = "blue", "Temperature Change" = "red")) +
+    labs(title = "Temperature Change vs Water Stress Over Selected Years",
+         x = "Year", y = "Normalized Values (0–1)") +
+    theme_minimal()
+
+  ggplotly(p)
+})
+
+plotlyOutput("stress_plot")
+```
+
+### Water Stress Across the Globe
+As global temperatures rise, regions already experiencing water scarcity face intensified shortages, while new areas begin to experience unprecedented stress on their water resources. Hot climate regions like the Middle East and North Africa — including countries like Saudi Arabia and Libya — face a severe water stress crisis.
+
+```{r emjdag}
+sliderInput("water_year", 
+            "Select Year:", 
+            min = min(combined_data$year, na.rm = TRUE), 
+            max = 2021, 
+            value = 2021, 
+            step = 1, 
+            sep = "")
+
+```
+
+```{r water-stressmap, echo=FALSE}
+output$map_plot_waterstress <- renderPlotly({
+  selected_data <- combined_data %>%
+    filter(year == input$water_year, year <= 2021)
+
+  plot_ly() %>%
+    add_trace(
+      data = selected_data,
+      locations = ~country,
+      z = ~level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources,
+      zmin = 0,
+      zmax = 1000,
+      text = ~paste("Country: ", country,
+                    "<br>Water Stress Level: ",
+                    level_of_water_stress_freshwater_withdrawal_as_a_proportion_of_available_freshwater_resources),
+      type = "choropleth",
+      locationmode = "country names",
+      colorscale = "YlOrRd",
+      colorbar = list(
+        title = "Water Stress Level",
+        tickvals = seq(0, 1000, by = 200)
+      )
+    ) %>%
+    layout(
+      title = paste("Water Stress Around the Globe -", input$water_year),
+      geo = list(
+        showcoastlines = TRUE,
+        showland = TRUE,
+        landcolor = "rgb(242, 242, 242)",
+        projection = list(type = "mercator")
+      )
+    )
+})
+
+# ---- Output container ----
+plotlyOutput("map_plot_waterstress")
+```
+
+### Total Green House emissions
+
+Greenhouse gas (GHG) emissions are the primary driver of global warming, leading to rising temperatures, climate change, and increased water stress worldwide. These gases trap heat in the Earth's atmosphere, disrupting the natural climate balance. Countries like Brazil, China, Germany, and India are among the top contributors of greenhouse emissions.
+
+
+```{r ghg, echo=FALSE}
+output$ghg_plot <- renderPlotly({
+  excluded_countries <- c(
+    "Early-demographic dividend", "Africa Eastern and Southern", "Arab World",
+    "East Asia & Pacific", "East Asia & Pacific (excluding high income)",
+    "East Asia & Pacific (IDA & IBRD countries)", "Euro area", "Europe & Central Asia",
+    "Europe & Central Asia (excluding high income)", "Europe & Central Asia (IDA & IBRD countries)",
+    "European Union", "Fragile and conflict affected situations",
+    "Heavily indebted poor countries (HIPC)", "High income", "IBRD only", "IDA & IBRD total",
+    "IDA blend", "IDA only", "IDA total", "Late-demographic dividend",
+    "Latin America & Caribbean", "Latin America & Caribbean (excluding high income)",
+    "Latin America & the Caribbean (IDA & IBRD countries)",
+    "Least developed countries: UN classification", "Low & middle income", "Low income",
+    "Lower middle income", "Middle East & North Africa", "Middle East & North Africa (excluding high income)",
+    "Middle East & North Africa (IDA & IBRD countries)", "Middle income", "Not classified",
+    "OECD members", "Other small states", "Pacific island small states", "Post-demographic dividend",
+    "Pre-demographic dividend", "South Asia", "South Asia (IDA & IBRD)",
+    "Sub-Saharan Africa", "Sub-Saharan Africa (excluding high income)",
+    "Sub-Saharan Africa (IDA & IBRD countries)", "Upper middle income", "World", "(blank)"
+  )
+
+  filtered_data <- combined_data %>%
+    filter(!country %in% excluded_countries)
+
+  top_emissions <- filtered_data %>%
+    group_by(country) %>%
+    summarize(max_emissions = max(total_greenhouse_gas_emissions_including_lulucf_mt_co2e, na.rm = TRUE)) %>%
+    arrange(desc(max_emissions)) %>%
+    slice_head(n = 10)
+
+  filtered_data1 <- filtered_data %>%
+    filter(country %in% top_emissions$country, year <= 2020)
+
+  p3 <- ggplot(filtered_data1, aes(
+    x = year,
+    y = total_greenhouse_gas_emissions_including_lulucf_mt_co2e,
+    color = country, group = country)) +
+    geom_line(size = 1) +
+    labs(
+      title = "Total Greenhouse Emissions over Time",
+      x = "Year",
+      y = "Greenhouse Emissions",
+      color = "Country"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text = element_text(size = 10),
+      axis.title = element_text(size = 12),
+      legend.text = element_text(size = 8),
+      legend.title = element_text(size = 10)
+    )
+
+  ggplotly(p3)
+})
+
+
+plotlyOutput("ghg_plot")
+```
+
+
+### CO₂ Emissions Over Time (Top 10 Countries)
+
+Carbon dioxide is the leading greenhouse gas emitted into the atmosphere. Tracking per capita CO₂ emissions allows us to assess the contributions of individual countries more equitably. The interactive map below visualizes CO₂ emissions by country, allowing selection of different years to observe trends and changes.
+
+```{r jgjhd code, echo=FALSE}
+unique_years <- sort(unique(combined_data$year))
+combined_data <- combined_data %>%
+  filter(year <= 2022)
+
+map_plot_CO2 <- plot_ly() %>%
+  add_trace(
+    data = combined_data %>% filter(year == min(unique_years)),
+    locations = ~country,
+    z = ~carbon_dioxide_co2_emissions_excluding_lulucf_per_capita_t_co2e_capita,
+    text = ~paste("Country: ", country, "<br>CO₂ Emissions: ", 
+                  round(carbon_dioxide_co2_emissions_excluding_lulucf_per_capita_t_co2e_capita, 2), " t/capita"),
+    type = 'choropleth',
+    colorscale = 'YlOrRd',
+    colorbar = list(title = "CO₂ Emissions (t/capita)", tickformat = ".0f"),
+    locationmode = 'country names',
+    zmin = 0,
+    zmax = 25
+  ) %>%
+  layout(
+    title = "CO₂ Emissions by Country (Per Capita)",
+    geo = list(
+      showcoastlines = TRUE,
+      coastlinecolor = "rgb(255, 255, 255)",
+      showland = TRUE,
+      landcolor = "rgb(242, 242, 242)",
+      projection = list(type = "mercator")
+    ),
+    updatemenus = list(
+      list(
+        buttons = lapply(unique_years, function(y) {
+          list(
+            method = "restyle",
+            args = list("z", list(
+              combined_data %>%
+                filter(year == y) %>%
+                pull(carbon_dioxide_co2_emissions_excluding_lulucf_per_capita_t_co2e_capita)
+            )),
+            label = as.character(y)
+          )
+        }),
+        direction = "down",
+        showactive = TRUE,
+        x = 0.1,
+        y = 1.15
+      )
+    )
+  )
+
+map_plot_CO2
+
+```
+
+### GDP vs. CO₂ Emissions Over Time (Top 10 Economies)
+
+High GDP countries like the USA, China, Russia, Canada, and Australia are among the largest CO₂ emitters globally. This chart visualizes the relationship between GDP and per capita CO₂ emissions over time, revealing how economic size correlates with environmental impact.
+
+```{r gdp_co2, echo=FALSE}
+sliderInput("year_range_gdp", "Select Year Range:",
+            min = 1990,
+            max = 2018,
+            value = c(1990, 2018),
+            step = 1,
+            sep = "")
+
+
+# SERVER: renderPlotly
+
+output$gdp_co2_plot <- renderPlotly({
+  carbon_emission_gdp <- combined_data[, c("country", "year", "gdp_current_us", "carbon_dioxide_co2_emissions_excluding_lulucf_per_capita_t_co2e_capita")]
+  colnames(carbon_emission_gdp) <- c("Country", "Year", "GDP", "CO2_Emissions")
+
+  carbon_emission_gdp_top <- carbon_emission_gdp %>%
+    filter(!Country %in% excluded_countries) %>%
+    filter(Year <= 2018, Year >= input$year_range_gdp[1], Year <= input$year_range_gdp[2]) %>%
+    group_by(Year) %>%
+    slice_max(n = 10, order_by = GDP) %>%
+    bind_rows(
+      carbon_emission_gdp %>%
+        filter(!Country %in% excluded_countries) %>%
+        filter(Year <= 2018, Year >= input$year_range_gdp[1], Year <= input$year_range_gdp[2]) %>%
+        group_by(Year) %>%
+        slice_max(n = 10, order_by = CO2_Emissions)
+    ) %>%
+    distinct(Country, Year, .keep_all = TRUE) %>%
+    ungroup()
+
+  p <- ggplot(carbon_emission_gdp_top, aes(
+    x = GDP, y = CO2_Emissions, size = GDP, color = Country, frame = Year,
+    text = paste("Country:", Country, "<br>Year:", Year, "<br>GDP:", GDP, "<br>CO2 Emissions:", CO2_Emissions)
+  )) +
+    geom_point(alpha = 0.7) +
+    scale_size_continuous(range = c(5, 15)) +
+    labs(
+      title = "GDP vs. CO₂ Emissions Over Time (Top 10 Countries, 1990–2018)",
+      x = "GDP (Current US$)",
+      y = "CO₂ Emissions per Capita",
+      size = "GDP",
+      color = "Country"
+    ) +
+    theme_minimal() +
+    ggrepel::geom_text_repel(aes(label = Country), size = 4, max.overlaps = 20)
+
+  ggplotly(p, tooltip = "text") %>%
+    animation_opts(frame = 1000, easing = "linear")
+})
+
+plotlyOutput("gdp_co2_plot")
+
+```
+
+### Distribution of Global Energy Consumption
+
+Fossils fuels have remained the main energy source globally. However in recent years, a shift towards renewable energy sources can be observed.
+
+```{r global energy, echo=FALSE}
+sliderInput("energy_year_range", "Select Year Range:",
+            min = min(combined_data$year, na.rm = TRUE),
+            max = 2015,
+            value = c(2000, 2015),
+            step = 1, sep = "")
+
+
+output$energy_line_chart <- renderPlotly({
+  req(input$energy_year_range)
+
+  world_data <- combined_data %>%
+    filter(country == "World",
+           year >= input$energy_year_range[1],
+           year <= min(2015, input$energy_year_range[2])) %>%  # Hard stop at 2015
+    arrange(year)
+
+  world_data_long <- world_data %>%
+    select(year, 
+           fossil_fuel_energy_consumption_percent_of_total,
+           renewable_energy_consumption_percent_of_total_final_energy_consumption,
+           alternative_and_nuclear_energy_percent_of_total_energy_use) %>%
+    pivot_longer(cols = -year, names_to = "Energy_Type", values_to = "Percentage")
+
+  plot_ly(
+    data = world_data_long,
+    x = ~year,
+    y = ~Percentage,
+    color = ~Energy_Type,
+    text = ~paste0(Energy_Type, ": ", round(Percentage, 2), "%"),
+    type = "scatter",
+    mode = "lines+markers"
+  ) %>%
+    layout(
+      title = "Energy Consumption Trends (World)",
+      xaxis = list(title = "Year"),
+      yaxis = list(title = "Percentage of Total Energy Use"),
+      hovermode = "x unified",
+      legend = list(
+        title = list(text = "Energy Type"),
+        orientation = "h",
+        x = 0.5,
+        y = -0.2,
+        xanchor = "center",
+        yanchor = "top",
+        font = list(size = 10)
+      )
+    )
+})
+
+plotlyOutput("energy_line_chart")
+
+```
+
+### Fossil fuels
+
+Top consumers of fossil fuels as an energy source include countries like Algeria, Brunei, Gibraltar, Kuwait, malta, Oman, Qatar and Saudi Arabia.
+
+```{r fossil, echo=FALSE}
+
+
+output$fossil_area_plot <- renderPlotly({
+  top_fossils <- combined_data %>%
+    group_by(country) %>%
+    summarize(max_fossils = max(fossil_fuel_energy_consumption_percent_of_total, na.rm = TRUE)) %>%
+    arrange(desc(max_fossils)) %>%
+    slice_head(n = 8)
+
+  filtered_data <- combined_data %>%
+    filter(!country %in% excluded_countries)
+
+  filtered_data_fossils <- filtered_data %>%
+    filter(country %in% top_fossils$country)
+  
+  filtered_data_fossils <- filtered_data %>%
+    filter(country %in% top_fossils$country, year <= 2014)  # year filter added
+
+  p <- ggplot(filtered_data_fossils, aes(x = year, 
+                                         y = fossil_fuel_energy_consumption_percent_of_total, 
+                                         fill = country, 
+                                         color = country, 
+                                         group = country)) +
+    geom_area(alpha = 0.8, position = "stack", color = "black") +
+    labs(
+      title = "Fossil Energy Consumption (%) of Total Energy Use",
+      x = "Year",
+      y = "Fossil Energy Consumption (%)",
+      fill = "Country"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      text = element_text(size = 8),
+      legend.text = element_text(size = 7)
+    )
+
+  ggplotly(p)
+})
+
+
+plotlyOutput("fossil_area_plot")
+
+```
+
+### Renewable Energy Consumption (%) out of Total Energy Consumption
+Countries like Bhutan, Burundi, ethiopia and Liberia are leading in greater renewable energy usage.
+
+```{r renewable, echo=FALSE}
+
+
+output$renewable_area_plot <- renderPlotly({
+  top_renewable <- combined_data %>%
+    group_by(country) %>%
+    summarize(max_renewable = max(renewable_energy_consumption_percent_of_total_final_energy_consumption, na.rm = TRUE)) %>%
+    arrange(desc(max_renewable)) %>%
+    slice_head(n = 20)
+
+  filtered_data <- combined_data %>%
+    filter(!country %in% excluded_countries)
+
+  filtered_data_renewable <- filtered_data %>%
+    filter(country %in% top_renewable$country)
+
+  # Ensure numeric format
+  filtered_data_renewable$renewable_energy_consumption_percent_of_total_final_energy_consumption <- as.numeric(
+    gsub("[^0-9\\.]", "", filtered_data_renewable$renewable_energy_consumption_percent_of_total_final_energy_consumption)
+  )
+
+  # Remove NA or Inf
+  filtered_data_renewable <- filtered_data_renewable %>%
+    filter(!is.na(renewable_energy_consumption_percent_of_total_final_energy_consumption),
+           is.finite(renewable_energy_consumption_percent_of_total_final_energy_consumption))
+  filtered_data_renewable <- filtered_data %>%
+    filter(country %in% top_renewable$country, year <= 2020)
+
+  p <- ggplot(filtered_data_renewable, aes(x = year,
+                                           y = renewable_energy_consumption_percent_of_total_final_energy_consumption,
+                                           fill = country, color = country, group = country)) +
+    geom_area(alpha = 0.8, position = "stack", color = "black") +
+    geom_text_repel(
+      data = filtered_data_renewable,
+      aes(label = country,
+          y = renewable_energy_consumption_percent_of_total_final_energy_consumption),
+      size = 7,
+      color = "black",
+      box.padding = 0.5,
+      segment.color = "grey50",
+      show.legend = FALSE
+    ) +
+    labs(
+      title = "Renewable Energy Consumption (%) of Total Final Energy Use",
+      x = "Year",
+      y = "Renewable Energy Consumption (%)",
+      fill = "Country"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      text = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    )
+
+  ggplotly(p)
+})
+
+
+plotlyOutput("renewable_area_plot")
+
+```
+
+### Alternative and Nuclear Energy Consumption out of Total Energy Consumption
+
+Countries like Albania, Armenia, Belgium, Finland, France and Iceland are slowly showing the world how alternative and nuclear energy sources can be used to reduce carbon footprint and reduce global warming.
+
+```{r alternative, echo=FALSE}
+
+output$alternative_area_plot <- renderPlotly({
+  top_alternative <- combined_data %>%
+    group_by(country) %>%
+    summarize(max_alternative = max(alternative_and_nuclear_energy_percent_of_total_energy_use, na.rm = TRUE)) %>%
+    arrange(desc(max_alternative)) %>%
+    slice_head(n = 20)
+
+  filtered_data <- combined_data %>%
+    filter(!country %in% excluded_countries)
+
+  filtered_data_alt <- filtered_data %>%
+    filter(country %in% top_alternative$country)
+  
+  filtered_data_alt <- filtered_data %>%
+    filter(country %in% top_alternative$country, year <= 2014)
+
+  p <- ggplot(filtered_data_alt, aes(x = year,
+                                     y = alternative_and_nuclear_energy_percent_of_total_energy_use,
+                                     fill = country, color = country, group = country)) +
+    geom_area(alpha = 0.8, position = "stack", color = "black") +
+    geom_text_repel(
+      data = filtered_data_alt,
+      aes(label = country, y = alternative_and_nuclear_energy_percent_of_total_energy_use),
+      size = 7,
+      color = "black",
+      box.padding = 0.5,
+      segment.color = "grey50",
+      show.legend = FALSE
+    ) +
+    labs(
+      title = "Alternative and Nuclear Energy Consumption out of Total Energy Consumption",
+      x = "Year",
+      y = "Alternative and Nuclear Energy Consumption (%)",
+      fill = "Country"
+    ) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      text = element_text(size = 7),
+      legend.text = element_text(size = 7)
+    )
+
+  ggplotly(p)
+})
+
+
+plotlyOutput("alternative_area_plot")
+
+```
+
+### Carbon Intensity of GDP
+
+This plot shows the top alternative/nuclear energy using countries and their associated carbon intensity levels. It helps reveal whether higher alternative energy usage correlates with lower CO2 intensity in economic productivity. The countries opting for more alternative and nuclear energy sources like Armenia, Belgium and Finland also display lesser carbon intensities of GDP which highlights the environmentally sustainable nature of this energy source.
+
+```{r carbonintensity, echo=FALSE}
+
+output$carbon_bar_plot <- renderPlotly({
+  top_alternative <- combined_data %>%
+    group_by(country) %>%
+    summarize(max_alternative = max(alternative_and_nuclear_energy_percent_of_total_energy_use, na.rm = TRUE)) %>%
+    arrange(desc(max_alternative)) %>%
+    slice_head(n = 20)
+
+  filtered_data <- combined_data %>%
+    filter(!country %in% excluded_countries)
+
+  filtered_data_alternative <- filtered_data %>%
+    filter(country %in% top_alternative$country)
+
+  carbon_intensity_data <- filtered_data_alternative %>%
+    select(country, year, carbon_intensity_of_gdp_kg_co2e_per_constant_2015_us_of_gdp) %>%
+    filter(!is.na(carbon_intensity_of_gdp_kg_co2e_per_constant_2015_us_of_gdp)) %>%
+    group_by(country) %>%
+    summarize(avg_intensity = mean(carbon_intensity_of_gdp_kg_co2e_per_constant_2015_us_of_gdp, na.rm = TRUE)) %>%
+    arrange(desc(avg_intensity))
+
+  plot_ly(
+    data = carbon_intensity_data,
+    x = ~reorder(country, avg_intensity),
+    y = ~avg_intensity,
+    type = "bar",
+    text = ~paste("Country: ", country, "<br>Carbon Intensity: ", round(avg_intensity, 2), " kg CO2e/2015 USD"),
+    hoverinfo = "text",
+    marker = list(color = 'rgb(56, 75, 126)')
+  ) %>%
+    layout(
+      title = "Carbon Intensity of GDP (kg CO2e per 2015 USD)",
+      xaxis = list(title = "Country", tickangle = 45),
+      yaxis = list(title = "Carbon Intensity (kg CO2e per 2015 USD)"),
+      hovermode = "closest",
+      showlegend = FALSE
+    )
+})
+
+
+plotlyOutput("carbon_bar_plot")
+
+```
+
+
+### High Fossil Fuel Dependent Countries and Carbon Intensity
+Countries with high dependence on fossil fuels like Qatar, Saudi Arabia abd Oman have significantly higher carbon intensities of GDP, revealing the environmental cost of fossil-based economic development.
+
+```{r vfngbzdv, echo=FALSE}
+
+
+output$carbon_fossil_bar_plot <- renderPlotly({
+  # Get countries with highest fossil fuel usage
+  top_fossil <- combined_data %>%
+    group_by(country) %>%
+    summarize(max_fossil = max(fossil_fuel_energy_consumption_percent_of_total, na.rm = TRUE)) %>%
+    arrange(desc(max_fossil)) %>%
+    slice_head(n = 20)
+
+  # Exclude regions/aggregates
+  filtered_data <- combined_data %>%
+    filter(!country %in% excluded_countries)
+
+  filtered_data_fossil <- filtered_data %>%
+    filter(country %in% top_fossil$country)
+
+  # Get carbon intensity
+  carbon_intensity_data <- filtered_data_fossil %>%
+    select(country, year, carbon_intensity_of_gdp_kg_co2e_per_constant_2015_us_of_gdp) %>%
+    filter(!is.na(carbon_intensity_of_gdp_kg_co2e_per_constant_2015_us_of_gdp)) %>%
+    group_by(country) %>%
+    summarize(avg_intensity = mean(carbon_intensity_of_gdp_kg_co2e_per_constant_2015_us_of_gdp, na.rm = TRUE)) %>%
+    arrange(desc(avg_intensity))
+
+  # Interactive bar plot
+  plot_ly(
+    data = carbon_intensity_data,
+    x = ~reorder(country, avg_intensity),
+    y = ~avg_intensity,
+    type = "bar",
+    text = ~paste("Country: ", country, "<br>Carbon Intensity: ", round(avg_intensity, 2), " kg CO2e/2015 USD"),
+    hoverinfo = "text",
+    marker = list(color = 'rgb(180, 40, 40)')  # darker red for fossil impact
+  ) %>%
+    layout(
+      title = "Carbon Intensity of GDP in Fossil Fuel Dependent Countries",
+      xaxis = list(title = "Country", tickangle = 45),
+      yaxis = list(title = "Carbon Intensity (kg CO2e per 2015 USD)"),
+      hovermode = "closest",
+      showlegend = FALSE
+    )
+})
+
+
+plotlyOutput("carbon_fossil_bar_plot")
+
+```
+
+### Energy Depletion
+
+Data also shows that countries with high dependence on fossil fuels like Saudi Arabia are facing great energy depletion in terms of economic value.
+
+```{r depletion, echo=FALSE}
+
+output$energy_depletion_plot <- renderPlotly({
+  energy_depletion_top<-combined_data%>%
+  filter(!is.na(adjusted_savings_energy_depletion_current_us))%>%
+  group_by(country)%>%
+  summarise(adjusted_savings_energy_depletion_current_us=sum(adjusted_savings_energy_depletion_current_us,na.rm=TRUE))%>%
+  arrange(desc(adjusted_savings_energy_depletion_current_us))%>%
+  slice_head(n=20)
+  
+  p5<-ggplot(energy_depletion_top, aes(x = reorder(country, adjusted_savings_energy_depletion_current_us), y = adjusted_savings_energy_depletion_current_us)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  scale_y_continuous(labels=comma)+
+  labs(title = "Energy Depletion (Top 20 countries)", x = "Country", y = "Energy Depletion (US$)") +
+  theme_minimal()
+    theme(text = element_text(size = 10))
+
+  ggplotly(p5)
+})
+
+
+plotlyOutput("energy_depletion_plot")
+
+```
+
+### Deforestation
+Deforestation is a major driver of climate change due to its direct impact on the planet’s carbon cycle. Trees play a crucial role in absorbing carbon dioxide (CO₂) from the atmosphere through photosynthesis. When forests are cut down or burned, this carbon is released back into the atmosphere, contributing to the greenhouse effect and warming the planet.Sub-saharan Africa and Latin America and Caribbean shows deforestation trend while South Asia, EU and East Asia show aforestation patterns.
+
+
+```{r deforestation, echo=FALSE}
+
+selectInput("deforestation_view", 
+            "View by:", 
+            choices = c("Top Countries", "Regions"), 
+            selected = "Top Countries")
+
+
+output$deforestation_plot <- renderPlotly({
+  req(input$deforestation_view)
+
+  data_deforestation <- combined_data %>%
+    group_by(country) %>%
+    arrange(year) %>%
+    mutate(forest_loss = forest_area_sq_km - lag(forest_area_sq_km)) %>%
+    ungroup()
+
+  if (input$deforestation_view == "Top Countries") {
+    top_countries <- data_deforestation %>%
+      filter(!country %in% excluded_countries) %>%  # <<< EXCLUDE HERE
+      group_by(country) %>%
+      summarise(total_loss = sum(forest_loss, na.rm = TRUE)) %>%
+      top_n(8, total_loss)
+
+    plot_data <- data_deforestation %>%
+      filter(country %in% top_countries$country)
+
+    p <- ggplot(plot_data, aes(x = year, y = country, fill = forest_loss)) +
+      geom_tile() +
+      scale_fill_gradient2(
+        low = "red", mid = "white", high = "blue", midpoint = 0,
+        trans = scales::pseudo_log_trans(base = 10),
+        name = "Forest Change (sq.km)", labels = scales::comma
+      ) +
+      labs(
+        title = "Deforestation Heat Map by Top Countries",
+        x = "Year", y = "Country", fill = "Forest change (sq km)"
+      ) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+  } else if (input$deforestation_view == "Regions") {
+    region_list <- c(
+      "Africa Eastern and Southern", "Africa Western and Central", "Arab World",
+      "Central African Republic", "Central Europe and the Baltics", "East Asia & Pacific",
+      "European Union", "Latin America & Caribbean", "Middle East & North Africa",
+      "North America", "Pacific island small states", "South Asia", "Sub-Saharan Africa"
+    )
+
+    plot_data <- data_deforestation %>%
+      filter(country %in% region_list)
+
+    p <- ggplot(plot_data, aes(x = year, y = country, fill = forest_loss)) +
+      geom_tile() +
+      scale_fill_gradient2(
+        low = "red", mid = "white", high = "blue", midpoint = 0,
+        trans = scales::pseudo_log_trans(base = 10),
+        name = "Forest Loss/Gain (sq.km)",
+        breaks = c(-1000000, 0, 1000000), labels = scales::comma
+      ) +
+      labs(
+        title = "Deforestation Heat Map by Regions",
+        x = "Year", y = "Country", fill = "Forest change (sq km)",
+        caption = "Source: Your Data Source Here"
+      ) +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  }
+
+  ggplotly(p)
+})
+
+
+plotlyOutput("deforestation_plot")
+
+```
+
+Deforestation leads to the destruction of habitats for countless plant and animal species. Loss of biodiversity reduces nature's resilience to climate change and limits the availability of resources that can help mitigate the effects of climate change. This can be correlated to the high numbers of threatened plant , mammal and bird species in regions like Sub-Saharan Africa and latin america and Caribbean with high deforestation patterns. 
+
+```{r species, echo=FALSE}
+
+deforestation_regions<-combined_data%>%filter(country %in% c("Africa Eastern and Southern","Africa Western and Central","Arab World","Central African Republic","Central Europe and the Baltics","East Asia & Pacific","European Union","Latin America & Caribbean","Middle East & North Africa","North America","Pacific island small states","South Asia","Sub-Saharan Africa"))
+
+
+output$species_threatened_chart <- renderPlotly({
+  # Prepare data
+  species_data <- deforestation_regions %>%
+    select(country, bird_species_threatened, mammal_species_threatened, plant_species_higher_threatened) %>%
+    pivot_longer(
+      cols = c(bird_species_threatened, mammal_species_threatened, plant_species_higher_threatened),
+      names_to = "Species_Type",
+      values_to = "Threatened_Count"
+    )
+
+  # Plot
+  plot_ly(
+    data = species_data,
+    x = ~country,
+    y = ~Threatened_Count,
+    color = ~Species_Type,
+    type = 'bar',
+    text = ~paste(Species_Type, ": ", Threatened_Count),
+    hoverinfo = "text",
+    barmode = "group",
+    marker = list(line = list(width = 1, color = 'rgb(255,255,255)'))
+  ) %>%
+    layout(
+      title = "Threatened Species in Different Regions",
+      xaxis = list(title = "Region", tickangle = 45),
+      yaxis = list(title = "Number of Threatened Species"),
+      hovermode = "x unified",
+      legend = list(title = list(text = "Species Type"))
+    )
+})
+
+plotlyOutput("species_threatened_chart")
+```
+
+### Air Quality
+
+Air quality, climate change, and carbon emissions are closely interconnected, as the pollutants that affect air quality also play a significant role in shaping the climate. The graph below shows PM2.5 air pollution levels by country.Countries like India, Pakistan, Afghanistan and Egypt show high air pollution levels.
+
+```{r airquality, echo=FALSE}
+
+sliderInput("pm25_year", "Select Year:",
+            min = min(combined_data$year, na.rm = TRUE),
+            max = 2020,
+            value = 2015,
+            step = 1, sep = "")
+
+
+output$pm25_map <- renderPlotly({
+  req(input$pm25_year)
+
+  filtered_data <- combined_data %>%
+    filter(year == input$pm25_year)
+
+  plot_ly(
+    data = filtered_data,
+    locations = ~country,
+    z = ~pm2_5_air_pollution_mean_annual_exposure_micrograms_per_cubic_meter,
+    text = ~paste("Country: ", country,
+                  "<br>PM2.5 Pollution: ",
+                  round(pm2_5_air_pollution_mean_annual_exposure_micrograms_per_cubic_meter, 1), " µg/m³"),
+    type = 'choropleth',
+    colorscale = 'YlOrRd',
+    zmin = 0,
+    zmax = 60,
+    colorbar = list(title = "PM2.5 Pollution (µg/m³)"),
+    locationmode = 'country names'
+  ) %>%
+    layout(
+      title = paste("PM2.5 Air Pollution Levels by Country in", input$pm25_year),
+      geo = list(
+        showcoastlines = TRUE,
+        coastlinecolor = "rgb(255, 255, 255)",
+        showland = TRUE,
+        landcolor = "rgb(242, 242, 242)",
+        projection = list(type = "mercator")
+      )
+    )
+})
+
+plotlyOutput("pm25_map")
+```
+
+Poor air quality, worsened by carbon emissions and climate change, has significant health impacts. Exposure to pollutants like PM2.5, ozone, and NOₓ can lead to respiratory issues, cardiovascular diseases, and even premature death. Vulnerable populations, such as children, the elderly, and those with pre-existing health conditions, are at the highest risk. Countries like Afghanistan, Pakistan and parts of Africa also show high mortality rates due to air pollution.
+
+```{r pollutants, echo=FALSE, warning=FALSE}
+
+# calculate summary statistics
+
+summary_table <- combined_data %>%
+  group_by(country) %>%
+  select(-year, -latitude, -longitude,-country_code) %>%
+  summarise(across(
+    where(is.numeric),
+    list(
+      mean = ~mean(.x, na.rm = TRUE),
+      median = ~median(.x, na.rm = TRUE),
+      sd = ~sd(.x, na.rm = TRUE),
+      min = ~min(.x, na.rm = TRUE),
+      max = ~max(.x, na.rm = TRUE)
+    ),
+    .names = "{.fn}_{.col}"
+  ))
+
+
+output$mortality_map <- renderPlotly({
+  # Filter out rows with missing values in the relevant variable
+  filtered_data <- summary_table %>%
+    filter(!is.na(mean_mortality_rate_attributed_to_household_and_ambient_air_pollution_age_standardized_per_100_000_population)) %>%
+    mutate(
+      iso3 = countrycode(country, "country.name", "iso3c")
+    )
+
+  # Debugging: Print any countries that failed ISO3 conversion
+  unmatched_countries <- filtered_data %>%
+    filter(is.na(iso3)) %>%
+    select(country) %>%
+    distinct()
+
+  print("Countries with unmatched ISO3 codes:")
+  print(unmatched_countries)
+
+  # Plot the choropleth map
+  plot_ly(
+    data = filtered_data,
+    locations = ~iso3,  # ISO3 codes for mapping
+    z = ~mean_mortality_rate_attributed_to_household_and_ambient_air_pollution_age_standardized_per_100_000_population,
+    text = ~paste("Country: ", country,
+                  "<br>Mortality Rate: ",
+                  round(mean_mortality_rate_attributed_to_household_and_ambient_air_pollution_age_standardized_per_100_000_population, 1), " per 100,000"),
+    type = 'choropleth',
+    colorscale = 'YlOrRd',
+    colorbar = list(title = "Mortality Rate (per 100,000)"),
+    showscale = TRUE,
+    locationmode = 'ISO-3'
+  ) %>%
+    layout(
+      title = "Mortality due to Household and Ambient Air Pollution",
+      geo = list(
+        showcoastlines = TRUE,
+        coastlinecolor = "rgb(255, 255, 255)",
+        showland = TRUE,
+        landcolor = "rgb(242, 242, 242)",
+        projection = list(type = "mercator")
+      )
+    )
+})
+
+
+plotlyOutput("mortality_map")
+```
+
+
+The numbers speak for themselves—climate change is not a distant threat but a present reality. Immediate, science-driven interventions are crucial to mitigating its impact and securing a sustainable future. However, while the statistics may seem alarming, they also highlight an opportunity: with informed decisions and collective action, we can alter the trajectory of climate change and protect our planet for future generations.
+
+
+```{r deploy, include=FALSE}
+# Automatically deploy this Shiny document to shinyapps.io
+rsconnect::deployApp(
+  appDir = ".",
+  appName = "climate-change",
+  account = "hanjrazainab",
+  launch.browser = FALSE
+)
+
+```
