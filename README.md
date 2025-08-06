@@ -52,11 +52,10 @@ install.packages(c(
 
 ▶ How to Run Locally
 1. Clone the repository:
-git clone https://github.com/yourusername/climate-change-dashboard.git
-cd climate-change-dashboard
+https://github.com/zainabhanjra/Understanding-Global-Climate-Change
 
 
-2. Open climate_dashboard.Rmd in RStudio
+2. Open Shiny rmd.Rmd in RStudio
 
 3. Click "Run Document" (or use the “Knit with parameters” option)
 
