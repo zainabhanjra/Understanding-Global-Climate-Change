@@ -84,6 +84,3 @@ Zainab Hanjra
 
 📌 License
 MIT License (optional) — free to use, share, and adapt with attribution.
-  "shiny", "plotly", "leaflet", "ggplot2", "ggrepel",
-  "dplyr", "tidyr", "scales", "viridis", "countrycode"
-))
