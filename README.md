@@ -27,18 +27,6 @@ This project is an interactive R Shiny dashboard developed using runtime: shiny 
 
 ---
 
-## 📁 Repository Structure
-
-📦 climate-change-dashboard
-┣ 📜 climate_dashboard.Rmd # Main Shiny R Markdown file
-┣ 📁 data/ # Contains .rds data files
-┣ 📁 images/ # Screenshots or visuals (optional)
-┣ 📜 README.md # This file
-┗ 📜 summary_table.rds / combined_data.rds
-
-
----
-
 ## 📦 Dependencies
 
 You need the following R packages:
