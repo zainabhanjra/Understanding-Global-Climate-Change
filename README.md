@@ -5,7 +5,7 @@ Interactive R shiny app visualizing global climate change related trends
 
 This project is an interactive R Shiny dashboard developed using runtime: shiny in R Markdown. It visualizes key trends and indicators related to global climate change, including temperature rise, greenhouse gas emissions, water stress, energy consumption, deforestation, air pollution, and biodiversity threats.
 
-> 📊 Built with *R, **Shiny, **Plotly, **Leaflet, **ggplot2, and **dplyr*  
+> 📊 Built with R, Shiny, Plotly, Leaflet, ggplot2, and dplyr  
 > 🧠 Created by Zainab Hanjra
 
 ---
